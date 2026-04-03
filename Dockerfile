@@ -158,7 +158,10 @@ ENV GOCLAW_CONFIG=/app/config.json \
 
 EXPOSE 18790
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+# Fresh databases may need to run the full migration chain before the HTTP
+# server binds the port. Give first-boot upgrades enough time so orchestrators
+# like Coolify do not roll back a healthy startup mid-migration.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=5 \
     CMD wget -qO- http://localhost:18790/health || exit 1
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
