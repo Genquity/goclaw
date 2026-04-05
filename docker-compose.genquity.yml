@@ -1,0 +1,101 @@
+# Genquity stack — GoClaw + browser sidecar in one compose file.
+#
+# Usage:
+#   docker compose -f docker-compose.genquity.yml up -d --build
+#
+# Common .env overrides:
+#   GOCLAW_HOST_PORT=18790
+#   GOCLAW_INTERNAL_PORT=18790
+#   GOCLAW_HOST=0.0.0.0
+#   GOCLAW_CONFIG=/app/data/config.json
+#   GOCLAW_GATEWAY_TOKEN=...
+#   GOCLAW_ENCRYPTION_KEY=...
+#   GOCLAW_SKILLS_DIR=/app/data/skills
+#   GOCLAW_BROWSER_REMOTE_URL=ws://chrome:9222
+#   GOCLAW_TRACE_VERBOSE=0
+#   CHROME_IMAGE_TAG=124
+#
+# Notes:
+# - This file keeps Chrome private on the internal compose network.
+# - Set GOCLAW_POSTGRES_DSN in .env if you use an external Postgres instance.
+# - If you want bundled Postgres too, continue using docker-compose.postgres.yml
+#   or extend this file with a postgres service.
+
+services:
+  goclaw:
+    image: ghcr.io/nextlevelbuilder/goclaw:latest
+    build:
+      context: ${GOCLAW_DIR:-.}
+      dockerfile: Dockerfile
+      args:
+        ENABLE_OTEL: "${ENABLE_OTEL:-false}"
+        ENABLE_EMBEDUI: "${ENABLE_EMBEDUI:-true}"
+        ENABLE_PYTHON: "${ENABLE_PYTHON:-true}"
+        ENABLE_FULL_SKILLS: "${ENABLE_FULL_SKILLS:-true}"
+        VERSION: "${GOCLAW_VERSION:-dev}"
+    ports:
+      - "${GOCLAW_HOST_PORT:-18790}:${GOCLAW_INTERNAL_PORT:-18790}"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - GOCLAW_HOST=${GOCLAW_HOST:-0.0.0.0}
+      - GOCLAW_PORT=${GOCLAW_INTERNAL_PORT:-18790}
+      - GOCLAW_CONFIG=${GOCLAW_CONFIG:-/app/data/config.json}
+      - GOCLAW_GATEWAY_TOKEN=${GOCLAW_GATEWAY_TOKEN:-}
+      - GOCLAW_ENCRYPTION_KEY=${GOCLAW_ENCRYPTION_KEY:-}
+      - GOCLAW_SKILLS_DIR=${GOCLAW_SKILLS_DIR:-/app/data/skills}
+      - GOCLAW_BROWSER_REMOTE_URL=${GOCLAW_BROWSER_REMOTE_URL:-ws://chrome:9222}
+      - GOCLAW_TRACE_VERBOSE=${GOCLAW_TRACE_VERBOSE:-0}
+    volumes:
+      - goclaw-data:/app/data
+      - goclaw-workspace:/app/workspace
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+      - CHOWN
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+    depends_on:
+      chrome:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "2.0"
+          pids: 200
+    restart: unless-stopped
+
+  chrome:
+    image: zenika/alpine-chrome:${CHROME_IMAGE_TAG:-124}
+    command:
+      - --no-sandbox
+      - --remote-debugging-address=0.0.0.0
+      - --remote-debugging-port=9222
+      - --remote-allow-origins=*
+      - --disable-gpu
+      - --disable-dev-shm-usage
+    shm_size: 2gb
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9222/json/version >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2.0"
+    restart: unless-stopped
+
+volumes:
+  goclaw-data:
+  goclaw-workspace:
