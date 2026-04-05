@@ -98,4 +98,6 @@ services:
 
 volumes:
   goclaw-data:
+    name: goclaw-data
   goclaw-workspace:
+    name: goclaw-workspace
